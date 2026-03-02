@@ -1,0 +1,135 @@
+version: 2
+
+sources:
+  - name: mercury_raw
+    database: mercury_prod
+    schema: raw
+    tables:
+      - name: accounts
+      - name: product_enrollments
+      - name: transactions
+
+models:
+
+  # ─── STAGING ─────────────────────────────────────────────────────────────────
+
+  - name: stg_accounts
+    description: >
+      Standardized account records from the Mercury core system via Fivetran.
+      One row per business account. Source of truth for account metadata and lifecycle state.
+    columns:
+      - name: account_id
+        description: Primary key. Unique identifier for a Mercury account.
+        tests: [unique, not_null]
+      - name: business_id
+        description: Parent business entity. One business may have multiple accounts.
+        tests: [not_null]
+      - name: account_type
+        description: "Type of account: checking or savings."
+        tests:
+          - accepted_values:
+              values: ['checking', 'savings']
+      - name: account_status
+        description: "Current lifecycle status."
+        tests:
+          - accepted_values:
+              values: ['active', 'suspended', 'closed']
+      - name: industry_segment
+        description: "Self-reported business segment at signup."
+        tests:
+          - accepted_values:
+              values: ['saas', 'ecommerce', 'agency', 'vc_fund', 'crypto', 'other']
+      - name: opened_at
+        tests: [not_null]
+
+  - name: stg_product_enrollments
+    description: >
+      One row per account × product enrollment event.
+      Captures when an account gains access to a Mercury product (credit, treasury, loans, etc.).
+    columns:
+      - name: enrollment_id
+        tests: [unique, not_null]
+      - name: account_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_accounts')
+              field: account_id
+      - name: product_slug
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - checking
+                - savings
+                - credit_card
+                - treasury
+                - working_capital_loan
+                - venture_debt
+                - bill_pay
+                - invoicing
+                - expense_management
+      - name: enrollment_status
+        tests:
+          - accepted_values:
+              values: ['active', 'cancelled', 'pending']
+      - name: enrolled_at
+        tests: [not_null]
+
+  - name: stg_transactions
+    description: >
+      Completed and pending transactions, scoped to adoption signals.
+      Excludes failed transactions (modeled separately in fraud domain).
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: account_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_accounts')
+              field: account_id
+      - name: amount_usd
+        description: Transaction amount in USD. Must be non-negative (credits are directional via transaction_type).
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: transacted_at
+        tests: [not_null]
+
+  # ─── MARTS ───────────────────────────────────────────────────────────────────
+
+  - name: mart_growth__account_adoption
+    description: >
+      Monthly snapshot fact table. One row per account per calendar month.
+      Tracks product adoption state, engagement depth, and cross-sell signals over time.
+
+      Designed for three audiences:
+        1. Data Scientists: feature store for next-product propensity models.
+        2. Product/Growth: self-serve dashboards (Omni/Hex) for activation funnels.
+        3. Operations: account health monitoring and AM cross-sell prioritization.
+
+      Grain: account_id × snapshot_month.
+      Refresh: incremental (merge) on current month only. Full refresh on schema change.
+    columns:
+      - name: account_id
+        tests: [not_null]
+      - name: snapshot_month
+        tests: [not_null]
+      - name: cohort_month
+        description: Month the account was opened. Immutable. Used for cohort retention analysis.
+        tests: [not_null]
+      - name: product_breadth_score
+        description: >
+          Integer 0–6 counting distinct revenue-adjacent products active on the account.
+          Primary feature for propensity model targeting next cross-sell.
+      - name: recommended_next_product
+        description: >
+          Rule-based cross-sell recommendation derived from product gap analysis.
+          Intended as a baseline signal; Data Science team will layer propensity scores on top.
+          Mirrors logic used historically in Square AM cross-sell prioritization.
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [account_id, snapshot_month]

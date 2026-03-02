@@ -107,4 +107,4 @@ Tests defined in `schema.yml`:
 
 ---
 
-*Built by [Your Name] — [your@email.com] — [linkedin/github]*
+*Built by Ivan Urena-Valdes - ivanurenavaldes@gmail.com — [linkedin.com/in/ivanurenavaldes](linkedin.com/in/ivanurenavaldes/)*

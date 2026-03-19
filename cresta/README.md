@@ -28,11 +28,24 @@ Reading between the lines of the JD:
 
 | File | What it covers |
 |------|---------------|
+| [`schema.md`](schema.md) | Full data schema — 6 tables, column definitions, relationships, ERD |
 | [`questions.md`](questions.md) | Full question bank by category |
-| [`sql_practice.sql`](sql_practice.sql) | SQL exercises on metrics, cohorts, and conversational data |
-| [`python_practice.py`](python_practice.py) | Python exercises: stats, A/B testing, NLP basics, pandas |
 | [`case_study.md`](case_study.md) | Full realistic case study: pilot measurement for a contact center client |
 | [`study_guide.md`](study_guide.md) | Key concepts to review, with quick-reference notes |
+
+### SQL (`sql/`)
+
+| File | What it covers |
+|------|---------------|
+| [`sql/questions.sql`](sql/questions.sql) | 15 problems — prompts only, no answers |
+| [`sql/solutions.sql`](sql/solutions.sql) | Full solutions with inline explanations |
+
+### Python (`python/`)
+
+| File | What it covers |
+|------|---------------|
+| [`python/questions.py`](python/questions.py) | Function stubs + docstrings — implement these |
+| [`python/solutions.py`](python/solutions.py) | Full implementations + runnable demo (`python solutions.py`) |
 
 ---
 

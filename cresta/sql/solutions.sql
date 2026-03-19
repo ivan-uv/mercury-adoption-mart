@@ -1,19 +1,7 @@
 -- ============================================================
--- Cresta SQL Practice
--- Context: Contact center analytics — agents, conversations,
--- outcomes, pilot measurement
+-- Cresta SQL Practice — Solutions
+-- See schema.md for full table reference
 -- ============================================================
-
-
--- ============================================================
--- SCHEMA REFERENCE
--- ============================================================
--- conversations (conversation_id, agent_id, account_id, started_at, ended_at, channel)
--- conversation_events (event_id, conversation_id, agent_id, event_type, occurred_at)
--- outcomes (conversation_id, csat_score, resolved, transfer_count, abandon_flag)
--- agents (agent_id, account_id, hire_date, region, team_id, is_cresta_enabled)
--- accounts (account_id, account_name, industry, pilot_start_date, pilot_end_date, contract_arr)
--- weekly_kpis (account_id, week_start, avg_handle_time_sec, csat_avg, first_call_resolution_rate, call_volume)
 
 
 -- ============================================================
@@ -21,7 +9,7 @@
 -- ============================================================
 
 -- 1a. Average handle time per agent per week
--- Handle time = seconds from conversation start to end
+-- DATEDIFF gives the duration in seconds; DATE_TRUNC floors to the week boundary.
 SELECT
     a.agent_id,
     DATE_TRUNC('week', c.started_at) AS week_start,
@@ -34,6 +22,7 @@ ORDER BY 1, 2;
 
 
 -- 1b. Top 3 agents by call volume per region, last 30 days
+-- ROW_NUMBER rather than RANK so ties don't push a 4th row through.
 WITH agent_volume AS (
     SELECT
         a.region,
@@ -51,7 +40,8 @@ WHERE rk <= 3
 ORDER BY region, call_volume DESC;
 
 
--- 1c. CSAT accounts that dropped >10 points month-over-month
+-- 1c. Accounts where CSAT dropped >10 points month-over-month
+-- LAG lets us compare each month to the previous one within the same account.
 WITH monthly_csat AS (
     SELECT
         account_id,
@@ -83,8 +73,9 @@ ORDER BY csat_delta;
 -- SECTION 2: PILOT MEASUREMENT
 -- ============================================================
 
--- 2a. Pre/post comparison: AHT change per account during pilot
--- Assumes pilot_start_date is defined in accounts table
+-- 2a. Pre/post AHT comparison per account
+-- Two CTEs define pre and post windows using pilot dates from the accounts table.
+-- Watch out: BETWEEN is inclusive on both ends.
 WITH pre_pilot AS (
     SELECT
         w.account_id,
@@ -113,8 +104,9 @@ JOIN post_pilot post ON pre.account_id = post.account_id
 ORDER BY pct_change;
 
 
--- 2b. Treatment vs. control agent comparison (within an account)
--- Cresta-enabled agents = treatment, others = control
+-- 2b. Treatment vs. control agent comparison
+-- Pivot with conditional MAX to get side-by-side columns.
+-- Note: this assumes each account has both enabled and non-enabled agents.
 WITH agent_metrics AS (
     SELECT
         a.account_id,
@@ -131,12 +123,12 @@ WITH agent_metrics AS (
 )
 SELECT
     account_id,
-    MAX(CASE WHEN is_cresta_enabled THEN avg_aht_sec END)  AS treatment_aht,
+    MAX(CASE WHEN is_cresta_enabled     THEN avg_aht_sec END) AS treatment_aht,
     MAX(CASE WHEN NOT is_cresta_enabled THEN avg_aht_sec END) AS control_aht,
-    MAX(CASE WHEN is_cresta_enabled THEN avg_csat END)     AS treatment_csat,
-    MAX(CASE WHEN NOT is_cresta_enabled THEN avg_csat END) AS control_csat,
-    MAX(CASE WHEN is_cresta_enabled THEN fcr_rate END)     AS treatment_fcr,
-    MAX(CASE WHEN NOT is_cresta_enabled THEN fcr_rate END) AS control_fcr
+    MAX(CASE WHEN is_cresta_enabled     THEN avg_csat    END) AS treatment_csat,
+    MAX(CASE WHEN NOT is_cresta_enabled THEN avg_csat    END) AS control_csat,
+    MAX(CASE WHEN is_cresta_enabled     THEN fcr_rate    END) AS treatment_fcr,
+    MAX(CASE WHEN NOT is_cresta_enabled THEN fcr_rate    END) AS control_fcr
 FROM agent_metrics
 GROUP BY 1;
 
@@ -145,7 +137,8 @@ GROUP BY 1;
 -- SECTION 3: COHORT & RETENTION ANALYSIS
 -- ============================================================
 
--- 3a. Agent cohort performance — group agents by hire month, compare KPIs
+-- 3a. Agent cohort performance by hire month
+-- DATE_TRUNC on hire_date groups agents into monthly cohorts.
 WITH agent_cohorts AS (
     SELECT
         agent_id,
@@ -160,9 +153,9 @@ agent_weekly AS (
         AVG(DATEDIFF('second', c.started_at, c.ended_at)) AS avg_aht_sec,
         AVG(o.csat_score)                AS avg_csat
     FROM conversations c
-    JOIN agents a     ON c.agent_id = a.agent_id
+    JOIN agents a         ON c.agent_id = a.agent_id
     JOIN agent_cohorts ac ON a.agent_id = ac.agent_id
-    JOIN outcomes o   ON c.conversation_id = o.conversation_id
+    JOIN outcomes o       ON c.conversation_id = o.conversation_id
     GROUP BY 1, 2
 )
 SELECT *
@@ -170,7 +163,8 @@ FROM agent_weekly
 ORDER BY cohort_month, week_start;
 
 
--- 3b. Account tenure cohort: CSAT trajectory in first 6 months after Cresta go-live
+-- 3b. CSAT trajectory: first 26 weeks post go-live, aggregated across accounts
+-- DATEDIFF in weeks gives the "week number" since launch.
 WITH cohort_weeks AS (
     SELECT
         w.account_id,
@@ -196,8 +190,8 @@ ORDER BY 1;
 -- SECTION 4: CONVERSATIONAL DATA
 -- ============================================================
 
--- 4a. Average events per conversation by event type
--- (Proxy for conversation complexity / coaching touchpoints)
+-- 4a. Events per conversation by type
+-- Dividing total events by distinct conversations gives average depth per call.
 SELECT
     event_type,
     COUNT(*)                              AS total_events,
@@ -208,7 +202,8 @@ GROUP BY 1
 ORDER BY events_per_conversation DESC;
 
 
--- 4b. Find conversations with no outcome record (data quality check)
+-- 4b. Conversations with no outcome record (data quality check)
+-- LEFT JOIN + IS NULL is the standard pattern for finding unmatched rows.
 SELECT
     c.conversation_id,
     c.agent_id,
@@ -220,7 +215,8 @@ ORDER BY c.started_at DESC
 LIMIT 100;
 
 
--- 4c. Transfer rate trend by week — high transfers = bad CX signal
+-- 4c. Weekly transfer rate trend
+-- Transfer rate = total transfers / total conversations (not avg of per-call rates).
 SELECT
     DATE_TRUNC('week', c.started_at) AS week_start,
     COUNT(c.conversation_id)          AS total_conversations,
@@ -237,8 +233,8 @@ ORDER BY 1;
 -- SECTION 5: TRICKY / INTERVIEW-STYLE PROBLEMS
 -- ============================================================
 
--- 5a. For each account, find the week with the highest call volume
--- Use window functions — do NOT use a subquery with GROUP BY + MAX hack
+-- 5a. Peak week per account (window function approach)
+-- RANK instead of ROW_NUMBER so tied peak weeks both surface.
 WITH ranked_weeks AS (
     SELECT
         account_id,
@@ -252,7 +248,8 @@ FROM ranked_weeks
 WHERE rk = 1;
 
 
--- 5b. Rolling 4-week average AHT per account
+-- 5b. Rolling 4-week average AHT
+-- ROWS BETWEEN 3 PRECEDING AND CURRENT ROW = current row + 3 prior rows = 4 weeks total.
 SELECT
     account_id,
     week_start,
@@ -266,8 +263,9 @@ FROM weekly_kpis
 ORDER BY account_id, week_start;
 
 
--- 5c. Self-join: find accounts whose AHT improved more than the median improvement
--- (Two-step: compute improvement per account, then compare to median)
+-- 5c. Accounts that improved AHT more than the median improvement
+-- Step 1: use ROW_NUMBER + COUNT OVER to grab first and last row per account.
+-- Step 2: compute % improvement. Step 3: filter vs. median via PERCENTILE_CONT.
 WITH improvements AS (
     SELECT
         account_id,
@@ -278,8 +276,8 @@ WITH improvements AS (
             account_id,
             week_start,
             avg_handle_time_sec,
-            ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY week_start)     AS rn,
-            COUNT(*) OVER (PARTITION BY account_id)                              AS n
+            ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY week_start)  AS rn,
+            COUNT(*)     OVER (PARTITION BY account_id)                       AS n
         FROM weekly_kpis
     ) t
     GROUP BY account_id
@@ -295,5 +293,7 @@ with_delta AS (
 )
 SELECT *
 FROM with_delta
-WHERE pct_improvement > (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct_improvement) FROM with_delta)
+WHERE pct_improvement > (
+    SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct_improvement) FROM with_delta
+)
 ORDER BY pct_improvement DESC;

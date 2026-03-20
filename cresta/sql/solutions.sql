@@ -297,3 +297,160 @@ WHERE pct_improvement > (
     SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct_improvement) FROM with_delta
 )
 ORDER BY pct_improvement DESC;
+
+
+-- ============================================================
+-- SECTION 6: CRESTA-SPECIFIC SCENARIOS
+-- ============================================================
+
+-- 6a. Channel performance comparison
+-- Straightforward GROUP BY with conditional aggregation across channels.
+SELECT
+    c.account_id,
+    c.channel,
+    COUNT(c.conversation_id)                                    AS call_volume,
+    AVG(DATEDIFF('second', c.started_at, c.ended_at))          AS avg_aht_sec,
+    AVG(o.csat_score)                                           AS avg_csat,
+    AVG(CASE WHEN o.resolved THEN 1.0 ELSE 0.0 END)            AS fcr_rate
+FROM conversations c
+JOIN outcomes o ON c.conversation_id = o.conversation_id
+GROUP BY 1, 2
+ORDER BY 1, 2;
+
+
+-- 6b. Automation readiness scoring
+-- MIN/MAX normalization across accounts, then weighted composite score.
+-- The trick is using window functions for normalization inside a CTE.
+WITH account_metrics AS (
+    SELECT
+        account_id,
+        AVG(call_volume)                  AS avg_volume,
+        AVG(avg_handle_time_sec)          AS avg_aht,
+        AVG(first_call_resolution_rate)   AS fcr_rate
+    FROM weekly_kpis
+    GROUP BY 1
+),
+with_bounds AS (
+    SELECT
+        *,
+        MIN(avg_volume) OVER () AS min_vol,  MAX(avg_volume) OVER () AS max_vol,
+        MIN(avg_aht)    OVER () AS min_aht,  MAX(avg_aht)    OVER () AS max_aht,
+        MIN(fcr_rate)   OVER () AS min_fcr,  MAX(fcr_rate)   OVER () AS max_fcr
+    FROM account_metrics
+),
+normalized AS (
+    SELECT
+        account_id,
+        avg_volume,
+        avg_aht,
+        fcr_rate,
+        -- Normalize to 0-1
+        (avg_volume - min_vol) / NULLIF(max_vol - min_vol, 0) AS norm_volume,
+        (avg_aht    - min_aht) / NULLIF(max_aht - min_aht, 0) AS norm_aht,
+        (fcr_rate   - min_fcr) / NULLIF(max_fcr - min_fcr, 0) AS norm_fcr
+    FROM with_bounds
+)
+SELECT
+    account_id,
+    ROUND(avg_volume, 0)  AS avg_volume,
+    ROUND(avg_aht, 0)     AS avg_aht,
+    ROUND(fcr_rate, 3)    AS fcr_rate,
+    ROUND((norm_volume + (1 - norm_aht) + norm_fcr) / 3, 3) AS readiness_score
+FROM normalized
+ORDER BY readiness_score DESC;
+
+
+-- 6c. Coaching adoption rate by team
+-- LEFT JOIN from conversations to coaching events, then aggregate by team.
+WITH conv_coaching AS (
+    SELECT
+        a.team_id,
+        c.conversation_id,
+        MAX(CASE WHEN ce.event_type = 'coaching_suggestion' THEN 1 ELSE 0 END) AS was_coached
+    FROM conversations c
+    JOIN agents a ON c.agent_id = a.agent_id
+    LEFT JOIN conversation_events ce
+        ON c.conversation_id = ce.conversation_id
+        AND ce.event_type = 'coaching_suggestion'
+    GROUP BY 1, 2
+)
+SELECT
+    team_id,
+    COUNT(*)                          AS total_conversations,
+    SUM(was_coached)                  AS coached_conversations,
+    ROUND(SUM(was_coached) * 1.0 / COUNT(*), 3) AS coaching_rate,
+    RANK() OVER (ORDER BY SUM(was_coached) * 1.0 / COUNT(*) DESC) AS team_rank
+FROM conv_coaching
+GROUP BY 1
+ORDER BY team_rank;
+
+
+-- 6d. Agent ramp curve by tenure bucket and Cresta status
+-- CASE expression on DATEDIFF between hire_date and conversation date creates tenure buckets.
+-- Side-by-side comparison is the core deliverable for proving "faster onboarding."
+SELECT
+    CASE
+        WHEN DATEDIFF('month', a.hire_date, c.started_at) < 3  THEN '0-3 months'
+        WHEN DATEDIFF('month', a.hire_date, c.started_at) < 6  THEN '3-6 months'
+        WHEN DATEDIFF('month', a.hire_date, c.started_at) < 12 THEN '6-12 months'
+        ELSE '12+ months'
+    END                                                AS tenure_bucket,
+    a.is_cresta_enabled,
+    COUNT(DISTINCT a.agent_id)                         AS agent_count,
+    AVG(DATEDIFF('second', c.started_at, c.ended_at)) AS avg_aht_sec,
+    AVG(o.csat_score)                                  AS avg_csat
+FROM conversations c
+JOIN agents a   ON c.agent_id = a.agent_id
+JOIN outcomes o ON c.conversation_id = o.conversation_id
+GROUP BY 1, 2
+ORDER BY
+    CASE tenure_bucket
+        WHEN '0-3 months'  THEN 1
+        WHEN '3-6 months'  THEN 2
+        WHEN '6-12 months' THEN 3
+        ELSE 4
+    END,
+    a.is_cresta_enabled;
+
+
+-- 6e. Multi-metric account health score
+-- Split last 8 weeks into two halves, compute trend as % change, then weighted composite.
+WITH last_8_weeks AS (
+    SELECT
+        account_id,
+        week_start,
+        avg_handle_time_sec,
+        csat_avg,
+        first_call_resolution_rate,
+        ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY week_start DESC) AS rn
+    FROM weekly_kpis
+),
+halves AS (
+    SELECT
+        account_id,
+        AVG(CASE WHEN rn <= 4 THEN csat_avg END)                AS recent_csat,
+        AVG(CASE WHEN rn BETWEEN 5 AND 8 THEN csat_avg END)     AS earlier_csat,
+        AVG(CASE WHEN rn <= 4 THEN avg_handle_time_sec END)     AS recent_aht,
+        AVG(CASE WHEN rn BETWEEN 5 AND 8 THEN avg_handle_time_sec END) AS earlier_aht,
+        AVG(first_call_resolution_rate)                           AS avg_fcr
+    FROM last_8_weeks
+    WHERE rn <= 8
+    GROUP BY account_id
+),
+trends AS (
+    SELECT
+        account_id,
+        (recent_csat - earlier_csat) / NULLIF(earlier_csat, 0) AS csat_trend,
+        (recent_aht  - earlier_aht)  / NULLIF(earlier_aht, 0)  AS aht_trend,
+        avg_fcr
+    FROM halves
+    WHERE earlier_csat IS NOT NULL AND earlier_aht IS NOT NULL
+)
+SELECT
+    account_id,
+    ROUND(csat_trend, 4)  AS csat_trend,
+    ROUND(aht_trend, 4)   AS aht_trend,
+    ROUND(avg_fcr, 3)     AS avg_fcr,
+    ROUND((csat_trend * 0.4) + (aht_trend * -0.3) + (avg_fcr * 0.3), 4) AS health_score
+FROM trends
+ORDER BY health_score DESC;

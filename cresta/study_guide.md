@@ -194,3 +194,80 @@ pipe.predict_proba(X_test)
 
 ### When results aren't significant
 > "The data shows a positive trend — AHT is lower with Cresta — but with the current number of agents and timeframe, we can't yet rule out random variation as the cause. Recommendation: extend the pilot by 4 weeks to reach the sample size needed for a definitive conclusion."
+
+---
+
+## Cresta-Specific AI/ML Concepts
+
+You don't need to build these, but you need to speak intelligently about them.
+
+### Ocean-1 (Cresta's Foundation Model)
+| Concept | What to know |
+|---------|-------------|
+| **Architecture** | Mixtral/Mistral-based, fine-tuned for contact center domain |
+| **LoRA adapters** | Low-Rank Adaptation — lightweight per-customer customization on top of one shared base model. Enables 1000s of customer-specific adapters from a single model cluster. |
+| **Cost advantage** | 100x cheaper than GPT-4 for production inference via domain-specific fine-tuning + LoRA |
+| **Serving** | Partnered with Fireworks AI for model serving at scale |
+
+### RAG (Retrieval-Augmented Generation)
+- Powers Cresta's Knowledge Assist feature
+- Pipeline: real-time conversation → detect knowledge need → search customer's knowledge base → LLM generates grounded response
+- **Why it matters for DS**: You may measure RAG quality (answer relevance, latency, usage rates) or analyze which knowledge gaps are most common
+
+### Key AI Concepts for Interview
+| Concept | 1-sentence explanation |
+|---------|----------------------|
+| **Fine-tuning** | Training a pre-trained LLM on domain-specific data to improve performance on specialized tasks |
+| **LoRA** | Adds small trainable weight matrices to a frozen model — fast, cheap fine-tuning without retraining the whole model |
+| **RAG** | Combines retrieval from a knowledge base with LLM generation to produce grounded, factual answers |
+| **Hallucination** | LLM generates plausible but factually incorrect information — mitigated by RAG, guardrails, and evidence-based reasoning |
+| **Guardrails** | Rules and models that block harmful, off-topic, or sensitive outputs from AI agents |
+| **ASR** | Automatic Speech Recognition — converts voice to text in real-time (critical for Cresta's voice pipeline) |
+| **TTS** | Text-to-Speech — converts AI-generated text back to spoken voice (Cresta uses Cartesia's Sonic) |
+
+### How to reference this in interview answers
+> "I know Cresta uses Ocean-1 with LoRA adapters per customer rather than generic GPT-4 calls — as a DS, that means the metrics I build for one customer might need to account for model-specific behavior differences across accounts."
+
+> "I'd want to understand how Knowledge Assist usage correlates with AHT reduction — if agents using the RAG-powered suggestions handle calls faster, that's a strong signal for the QBR."
+
+---
+
+## Cresta's Key Numbers (Memorize These)
+
+Reference these in your answers to show you've done your homework.
+
+| Metric | Number | Source |
+|--------|--------|--------|
+| Total funding | $270M+ | Series D press release |
+| Valuation | $1.6B | Series C announcement |
+| Series D | $125M (Nov 2024) | Led by WiL + QIA |
+| Employees | ~559 | As of Jan 2026 |
+| CSAT improvement | +20% | Cresta reported average |
+| AHT reduction | -15% | Cresta reported average |
+| Onboarding speed | 30% faster | Cresta reported average |
+| Revenue per lead | +25% | Cresta reported average |
+| FCR improvement | 2.3x with coaching | Cresta reported |
+| Ocean-1 cost savings | 100x vs GPT-4 | Cresta engineering blog |
+| Languages supported | 30+ | Real-Time Translation launch |
+
+---
+
+## Cresta-Specific Talking Points
+
+### For "Why Cresta?"
+1. Vertical AI is more interesting than horizontal — you're not building generic dashboards, you're measuring the causal impact of AI on human performance
+2. The measurement challenge is uniquely hard: phased rollouts, selection bias, confounders from contact center operations
+3. Direct line from analytics to revenue: your analysis feeds directly into renewal conversations worth millions in ARR
+
+### For "Tell me about your analytical approach"
+Always frame around Cresta's value chain:
+1. **Measurement** → Does Cresta actually improve performance? (A/B tests, DiD, propensity matching)
+2. **Translation** → What does this mean in dollars? (AHT savings × volume × agent cost)
+3. **Communication** → Can the CSM walk into a QBR with confidence? (Executive summary, methodology backup, objection handling)
+
+### For product-aware answers
+- Reference **Agent Assist** when discussing coaching effectiveness measurement
+- Reference **Conversation Intelligence** when discussing QBR/dashboard work
+- Reference **Automation Discovery** when discussing which conversations to automate (readiness scoring)
+- Reference **AI Analyst** when discussing scalable insights (natural language queries over conversation data)
+- Reference **Knowledge Agent** when discussing real-time agent support measurement

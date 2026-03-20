@@ -113,11 +113,28 @@ See `case_study.md` for a full worked example.
 
 ---
 
-## 8. Questions to Ask Cresta
+## 8. Product & AI Awareness
 
+These show you understand what Cresta actually builds. Expect at least one.
+
+- What is RAG (Retrieval-Augmented Generation)? How would you measure whether a RAG system is working well?
+- What is the difference between fine-tuning and prompting? When would you use each?
+- How would you measure the effectiveness of Cresta's real-time coaching suggestions? What metrics would you track?
+- Cresta uses LoRA adapters to customize models per customer. From a measurement perspective, how might this affect cross-customer benchmarking?
+- How would you design a framework to score conversations for automation readiness? What features would you use?
+- Cresta's AI Analyst lets users ask natural-language questions about conversation data. How would you evaluate whether this tool is actually being used and providing value?
+- What's the difference between correlation and causation in the context of "agents who use Cresta suggestions have better CSAT"?
+
+---
+
+## 9. Questions to Ask Cresta
+
+These are researched and tailored — they show you know the product.
+
+- "Cresta just launched Knowledge Agent and Automation Discovery — how does the Customer Analytics DS team support measurement for these newer product lines?"
+- "With Ocean-1 using LoRA adapters per customer, does the DS team ever work on model evaluation or performance benchmarking, or is that purely engineering?"
 - What does the data infrastructure look like today — how does customer data flow from the product into your analytics environment?
-- What does a "good QBR" look like at Cresta today, and where does analytics fall short?
+- What's the current state of the pilot measurement framework — is it standardized across accounts, or still being built?
 - How do you currently handle customers who push back on pilot results?
-- What's the biggest analytical challenge the Customer Success team faces that this role is meant to solve?
 - How does this role interact with the data/engineering team — is there a shared data platform, or is this role building its own pipelines?
 - What would make someone who's hired into this role a clear success at 6 months?

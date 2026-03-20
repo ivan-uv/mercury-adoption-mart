@@ -221,3 +221,123 @@ def compute_sentiment_score(transcript: str) -> float:
     Return rounded to 4 decimal places.
     """
     raise NotImplementedError
+
+
+# ============================================================
+# 5. REPORTED CRESTA INTERVIEW QUESTION: BALANCED CLASS SAMPLING
+# This question was reported on Glassdoor for a Cresta technical screen.
+# ============================================================
+
+def balanced_sample_allocation(n: int, class_counts: list[int]) -> list[int]:
+    """
+    *** ACTUAL CRESTA INTERVIEW QUESTION ***
+
+    Given a dataset with labeled classes, you want to randomly sample an
+    n-element subset such that classes are as balanced as possible.
+
+    Write a function which, given n and the number of examples in each class,
+    computes how many examples should be sampled from each class.
+
+    Args:
+        n: total number of samples to draw
+        class_counts: list of integers, where class_counts[i] is the number
+                      of examples in class i
+
+    Returns:
+        list of integers, where result[i] is how many examples to sample
+        from class i. sum(result) must equal n.
+
+    Rules:
+    - Never sample more from a class than it has available
+    - Distribute as evenly as possible across classes
+    - When even distribution isn't possible (some classes too small),
+      allocate their max, then redistribute the remainder evenly among
+      classes that still have capacity
+    - Break ties by giving extra samples to earlier classes (lower index)
+
+    Examples:
+        balanced_sample_allocation(10, [5, 5, 5]) -> [4, 3, 3]
+        balanced_sample_allocation(10, [3, 10, 10]) -> [3, 4, 3]
+        balanced_sample_allocation(6, [1, 1, 100]) -> [1, 1, 4]
+        balanced_sample_allocation(0, [5, 5]) -> [0, 0]
+    """
+    raise NotImplementedError
+
+
+# ============================================================
+# 6. CRESTA-SPECIFIC: AUTOMATION READINESS SCORING
+# Mirrors the logic behind Cresta's Automation Discovery product
+# ============================================================
+
+def compute_automation_readiness(
+    conversations_df: pd.DataFrame,
+    outcomes_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Score each account's conversations for automation potential.
+
+    Cresta's Automation Discovery product scores conversations by volume,
+    complexity, and resolution into a readiness score with projected ROI.
+
+    Given:
+    - conversations_df: conversation_id, account_id, agent_id, started_at, ended_at, channel
+    - outcomes_df: conversation_id, csat_score, resolved, transfer_count, abandon_flag
+
+    For each account, compute:
+    - weekly_volume: average conversations per week
+    - avg_handle_time: average AHT in seconds
+    - fcr_rate: fraction resolved on first contact (resolved=True)
+    - transfer_rate: avg transfers per conversation
+    - complexity_score: normalize AHT to 0-1 using min-max across accounts
+      (lower AHT = lower complexity = higher automation potential)
+    - readiness_score = (0.35 * norm_volume) + (0.35 * (1 - complexity_score)) + (0.30 * fcr_rate)
+      where norm_volume is also min-max normalized
+
+    Return a DataFrame with columns:
+        account_id | weekly_volume | avg_handle_time | fcr_rate | transfer_rate |
+        complexity_score | readiness_score
+
+    Sorted by readiness_score descending.
+    """
+    raise NotImplementedError
+
+
+# ============================================================
+# 7. COACHING EFFECTIVENESS MEASUREMENT
+# A core deliverable for the DS, Customer Analytics role
+# ============================================================
+
+def measure_coaching_effectiveness(
+    conversations_df: pd.DataFrame,
+    events_df: pd.DataFrame,
+    outcomes_df: pd.DataFrame,
+) -> dict:
+    """
+    Measure whether Cresta's coaching suggestions improve conversation outcomes.
+
+    Given:
+    - conversations_df: conversation_id, agent_id, started_at, ended_at
+    - events_df: event_id, conversation_id, agent_id, event_type, occurred_at
+    - outcomes_df: conversation_id, csat_score, resolved, transfer_count
+
+    Steps:
+    1. Split conversations into two groups:
+       - coached: at least one 'coaching_suggestion' event
+       - uncoached: zero 'coaching_suggestion' events
+    2. For each group compute:
+       - mean AHT (handle_time_sec from started_at/ended_at)
+       - mean CSAT (from outcomes)
+       - FCR rate (fraction resolved)
+       - count of conversations
+    3. Run Welch's t-test on AHT between the two groups
+    4. Run Welch's t-test on CSAT between the two groups
+
+    Return a dict with keys:
+        coached_count, uncoached_count,
+        coached_aht, uncoached_aht, aht_diff, aht_pvalue,
+        coached_csat, uncoached_csat, csat_diff, csat_pvalue,
+        coached_fcr, uncoached_fcr
+
+    Round all floats to 4 decimal places.
+    """
+    raise NotImplementedError

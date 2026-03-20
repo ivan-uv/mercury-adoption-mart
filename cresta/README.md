@@ -28,16 +28,18 @@ Reading between the lines of the JD:
 
 | File | What it covers |
 |------|---------------|
+| [`cresta_deep_dive.md`](cresta_deep_dive.md) | **START HERE** — Cresta product, tech stack, customers, competitors, market context |
+| [`interview_intel.md`](interview_intel.md) | Interview process, reported questions, format tips, what to expect |
 | [`schema.md`](schema.md) | Full data schema — 6 tables, column definitions, relationships, ERD |
 | [`questions.md`](questions.md) | Full question bank by category |
 | [`case_study.md`](case_study.md) | Full realistic case study: pilot measurement for a contact center client |
-| [`study_guide.md`](study_guide.md) | Key concepts to review, with quick-reference notes |
+| [`study_guide.md`](study_guide.md) | Key concepts to review, with quick-reference notes + Cresta-specific AI/LLM concepts |
 
 ### SQL (`sql/`)
 
 | File | What it covers |
 |------|---------------|
-| [`sql/questions.sql`](sql/questions.sql) | 15 problems — prompts only, no answers |
+| [`sql/questions.sql`](sql/questions.sql) | 20 problems — prompts only, no answers (includes Cresta-specific scenarios) |
 | [`sql/solutions.sql`](sql/solutions.sql) | Full solutions with inline explanations |
 
 ### Python (`python/`)

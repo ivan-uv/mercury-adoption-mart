@@ -247,6 +247,152 @@ def compute_sentiment_score(transcript: str) -> float:
 
 
 # ============================================================
+# 5. REPORTED CRESTA INTERVIEW QUESTION: BALANCED CLASS SAMPLING
+# ============================================================
+
+def balanced_sample_allocation(n: int, class_counts: list[int]) -> list[int]:
+    """
+    ACTUAL CRESTA INTERVIEW QUESTION.
+
+    Distribute n samples as evenly as possible across classes,
+    respecting per-class maximums. Ties go to earlier indices.
+
+    Key insight: iteratively allocate even shares, capping at class max,
+    then redistribute any leftover to remaining classes.
+    """
+    k = len(class_counts)
+    result = [0] * k
+    remaining = n
+    available = list(class_counts)  # mutable copy
+
+    while remaining > 0:
+        # Find classes that still have capacity
+        eligible = [i for i in range(k) if available[i] > 0]
+        if not eligible:
+            break
+
+        # Even share for each eligible class
+        share = remaining // len(eligible)
+        extra = remaining % len(eligible)
+
+        allocated_this_round = 0
+        for idx, i in enumerate(eligible):
+            # Base share + 1 extra for the first 'extra' eligible classes
+            alloc = share + (1 if idx < extra else 0)
+            # Cap at what's available
+            alloc = min(alloc, available[i])
+            result[i] += alloc
+            available[i] -= alloc
+            allocated_this_round += alloc
+
+        remaining -= allocated_this_round
+
+        # If we couldn't allocate anything this round, we're stuck
+        if allocated_this_round == 0:
+            break
+
+    return result
+
+
+def compute_automation_readiness(
+    conversations_df: pd.DataFrame,
+    outcomes_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Score each account for automation potential.
+    Mirrors Cresta's Automation Discovery product logic.
+    """
+    df = conversations_df.copy()
+    df["started_at"] = pd.to_datetime(df["started_at"])
+    df["ended_at"] = pd.to_datetime(df["ended_at"])
+    df["handle_time_sec"] = (df["ended_at"] - df["started_at"]).dt.total_seconds()
+    df["week"] = df["started_at"].dt.to_period("W")
+
+    # Merge outcomes
+    merged = df.merge(outcomes_df, on="conversation_id", how="inner")
+
+    # Weekly volume per account
+    weekly = merged.groupby(["account_id", "week"]).size().reset_index(name="vol")
+    weekly_avg = weekly.groupby("account_id")["vol"].mean().reset_index(name="weekly_volume")
+
+    # Account-level metrics
+    account_metrics = merged.groupby("account_id").agg(
+        avg_handle_time=("handle_time_sec", "mean"),
+        fcr_rate=("resolved", lambda x: x.mean()),
+        transfer_rate=("transfer_count", "mean"),
+    ).reset_index()
+
+    result = weekly_avg.merge(account_metrics, on="account_id")
+
+    # Min-max normalize
+    def minmax(s):
+        return (s - s.min()) / (s.max() - s.min()) if s.max() != s.min() else 0.0
+
+    result["complexity_score"] = minmax(result["avg_handle_time"])
+    norm_volume = minmax(result["weekly_volume"])
+
+    result["readiness_score"] = (
+        0.35 * norm_volume
+        + 0.35 * (1 - result["complexity_score"])
+        + 0.30 * result["fcr_rate"]
+    )
+
+    return result.sort_values("readiness_score", ascending=False).reset_index(drop=True)
+
+
+def measure_coaching_effectiveness(
+    conversations_df: pd.DataFrame,
+    events_df: pd.DataFrame,
+    outcomes_df: pd.DataFrame,
+) -> dict:
+    """
+    Compare outcomes for coached vs. uncoached conversations.
+    This is a core deliverable for the Customer Analytics DS role.
+    """
+    conv = conversations_df.copy()
+    conv["started_at"] = pd.to_datetime(conv["started_at"])
+    conv["ended_at"] = pd.to_datetime(conv["ended_at"])
+    conv["handle_time_sec"] = (conv["ended_at"] - conv["started_at"]).dt.total_seconds()
+
+    # Identify coached conversations
+    coached_ids = set(
+        events_df[events_df["event_type"] == "coaching_suggestion"]["conversation_id"]
+    )
+    conv["is_coached"] = conv["conversation_id"].isin(coached_ids)
+
+    # Merge outcomes
+    merged = conv.merge(outcomes_df, on="conversation_id", how="inner")
+
+    coached = merged[merged["is_coached"]]
+    uncoached = merged[~merged["is_coached"]]
+
+    # T-tests
+    aht_t, aht_p = stats.ttest_ind(
+        coached["handle_time_sec"].values,
+        uncoached["handle_time_sec"].values,
+        equal_var=False,
+    )
+    csat_coached = coached["csat_score"].dropna().values
+    csat_uncoached = uncoached["csat_score"].dropna().values
+    csat_t, csat_p = stats.ttest_ind(csat_coached, csat_uncoached, equal_var=False)
+
+    return {
+        "coached_count": len(coached),
+        "uncoached_count": len(uncoached),
+        "coached_aht": round(coached["handle_time_sec"].mean(), 4),
+        "uncoached_aht": round(uncoached["handle_time_sec"].mean(), 4),
+        "aht_diff": round(coached["handle_time_sec"].mean() - uncoached["handle_time_sec"].mean(), 4),
+        "aht_pvalue": round(aht_p, 4),
+        "coached_csat": round(csat_coached.mean(), 4),
+        "uncoached_csat": round(csat_uncoached.mean(), 4),
+        "csat_diff": round(csat_coached.mean() - csat_uncoached.mean(), 4),
+        "csat_pvalue": round(csat_p, 4),
+        "coached_fcr": round(coached["resolved"].mean(), 4),
+        "uncoached_fcr": round(uncoached["resolved"].mean(), 4),
+    }
+
+
+# ============================================================
 # DEMO
 # ============================================================
 
@@ -289,3 +435,17 @@ if __name__ == "__main__":
     print("\n=== Top Bigrams ===")
     for gram, count in extract_top_ngrams(samples, n=2, top_k=10):
         print(f"  {gram}: {count}")
+
+    # --- Balanced Class Sampling (actual Cresta interview question) ---
+    print("\n=== Balanced Class Sampling (Cresta Interview Q) ===")
+    test_cases = [
+        (10, [5, 5, 5]),
+        (10, [3, 10, 10]),
+        (6, [1, 1, 100]),
+        (0, [5, 5]),
+        (7, [2, 2, 2, 100]),
+        (15, [5, 5, 5]),
+    ]
+    for n, counts in test_cases:
+        result = balanced_sample_allocation(n, counts)
+        print(f"  n={n}, classes={counts} -> {result} (sum={sum(result)})")

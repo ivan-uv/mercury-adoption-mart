@@ -188,3 +188,74 @@
 
 
 -- YOUR QUERY HERE
+
+
+-- ============================================================
+-- SECTION 6: CRESTA-SPECIFIC SCENARIOS
+-- (Based on actual Cresta product patterns and interview themes)
+-- ============================================================
+
+-- 6a. Channel performance comparison
+-- Compare AHT, CSAT, and FCR across phone, chat, and email channels per account
+-- Cresta now covers all three channels — cross-channel analysis is a real deliverable
+-- Expected output: account_id | channel | call_volume | avg_aht_sec | avg_csat | fcr_rate
+
+
+-- YOUR QUERY HERE
+
+
+-- ---------------------------------------------------------------
+
+-- 6b. Automation readiness scoring
+-- Cresta's Automation Discovery product scores conversations for automation potential.
+-- Build a simplified version: for each account, compute a readiness score based on:
+--   - avg_volume_per_week (higher = more automatable)
+--   - avg_handle_time_sec (lower = simpler = more automatable)
+--   - fcr_rate (higher = more self-contained = more automatable)
+-- Normalize each metric to 0-1 using MIN/MAX scaling across accounts,
+-- then compute: readiness_score = (norm_volume + (1 - norm_aht) + norm_fcr) / 3
+-- Expected output: account_id | avg_volume | avg_aht | fcr_rate | readiness_score
+-- Rank accounts by readiness_score descending
+
+
+-- YOUR QUERY HERE
+
+
+-- ---------------------------------------------------------------
+
+-- 6c. Coaching adoption rate by team
+-- Using conversation_events, compute the % of conversations that received at least
+-- one 'coaching_suggestion' event, broken out by team_id.
+-- Then rank teams by adoption rate. Low adoption = intervention target.
+-- Expected output: team_id | total_conversations | coached_conversations | coaching_rate | team_rank
+
+
+-- YOUR QUERY HERE
+
+
+-- ---------------------------------------------------------------
+
+-- 6d. Agent ramp curve: performance by tenure bucket
+-- Group agents into tenure buckets (0-3 months, 3-6 months, 6-12 months, 12+ months)
+-- based on hire_date relative to conversation date.
+-- Compare AHT and CSAT across buckets for Cresta-enabled vs. non-enabled agents.
+-- This is how Cresta proves "30% faster onboarding" to customers.
+-- Expected output: tenure_bucket | is_cresta_enabled | agent_count | avg_aht_sec | avg_csat
+
+
+-- YOUR QUERY HERE
+
+
+-- ---------------------------------------------------------------
+
+-- 6e. Multi-metric account health score
+-- Combine AHT trend, CSAT trend, and FCR into a single health score per account.
+-- For each account, compute the slope of AHT and CSAT over their last 8 weeks using
+-- a simplified approach: (last 4 weeks avg - first 4 weeks avg) / first 4 weeks avg.
+-- health_score = (csat_trend * 0.4) + (aht_trend * -0.3) + (avg_fcr * 0.3)
+-- (Negative AHT trend = good, so we flip the sign)
+-- Expected output: account_id | csat_trend | aht_trend | avg_fcr | health_score
+-- This is the kind of composite metric you'd build for executive dashboards.
+
+
+-- YOUR QUERY HERE

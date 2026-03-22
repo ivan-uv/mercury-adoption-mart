@@ -72,17 +72,23 @@ dim_ingredients─┤    dim_recipes
 
 ## Setup
 
-### 1. Clone and install dependencies
+### 1. Install uv (if you haven't already)
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Clone and install dependencies
 
 ```bash
 git clone <repo-url>
 cd interview-practice/family-fuel-dashboard
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+uv sync --group dev
 ```
 
-### 2. Configure API keys
+`uv sync` creates a `.venv` automatically and installs all dependencies from `pyproject.toml` (including dev deps). No need to activate the virtualenv — prefix commands with `uv run`.
+
+### 3. Configure API keys
 
 ```bash
 cp .env.example .env
@@ -92,10 +98,10 @@ cp .env.example .env
 #   OFF_USER_AGENT  — any descriptive string, e.g. "YourName/1.0 (your@email.com)"
 ```
 
-### 3. Run the ETL pipeline
+### 4. Run the ETL pipeline
 
 ```bash
-python etl/run_pipeline.py
+uv run python etl/run_pipeline.py
 ```
 
 This will:
@@ -106,10 +112,10 @@ This will:
 5. Run SQL transforms to populate dim/fact tables and mart views
 6. Generate a weekly meal plan from available recipes
 
-### 4. Launch the dashboard
+### 5. Launch the dashboard
 
 ```bash
-streamlit run dashboard/app.py
+uv run streamlit run dashboard/app.py
 ```
 
 Open http://localhost:8501 in your browser.
@@ -121,7 +127,7 @@ Open http://localhost:8501 in your browser.
 **Option A: Python scheduler (cross-platform)**
 
 ```bash
-python scheduler.py
+uv run python scheduler.py
 ```
 
 Runs once at startup, then daily at 06:00. Keep the process alive in a `tmux` session or configure as a systemd service.
@@ -131,7 +137,7 @@ Runs once at startup, then daily at 06:00. Keep the process alive in a `tmux` se
 ```bash
 crontab -e
 # Add:
-0 6 * * * cd /path/to/family-fuel-dashboard && /path/to/.venv/bin/python etl/run_pipeline.py >> logs/etl.log 2>&1
+0 6 * * * cd /path/to/family-fuel-dashboard && uv run python etl/run_pipeline.py >> logs/etl.log 2>&1
 ```
 
 ---
@@ -151,7 +157,7 @@ crontab -e
 ## Running Tests
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 Tests use mocked API responses — no live API calls required.
@@ -163,7 +169,8 @@ Tests use mocked API responses — no live API calls required.
 ```
 family-fuel-dashboard/
 ├── README.md
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
 ├── .env.example
 ├── .gitignore
 ├── scheduler.py              # Cross-platform daily runner
@@ -205,6 +212,8 @@ family-fuel-dashboard/
 **Streamlit over Dash/Panel**: Fastest path from Python to an interactive app — a working dashboard in under an hour. Keeps focus on data engineering skills, not frontend code. `st.cache_resource` for the DuckDB connection is officially documented by DuckDB.
 
 **`schedule` library**: Lightweight, pure Python, cross-platform. No external broker or daemon required for a local portfolio project.
+
+**`uv` for package management**: Replaces pip + venv with a single fast tool. `uv sync` creates the virtualenv and installs everything in one command; `uv run` executes scripts without needing to activate the env. The `uv.lock` file is committed so the environment is exactly reproducible.
 
 ---
 

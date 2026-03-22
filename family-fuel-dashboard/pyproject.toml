@@ -1,0 +1,22 @@
+[project]
+name = "family-fuel-dashboard"
+version = "0.1.0"
+description = "Weekly meal planning intelligence dashboard — Spoonacular + USDA FDC + Open Food Facts → DuckDB → Streamlit"
+requires-python = ">=3.10"
+dependencies = [
+    "duckdb>=1.0.0",
+    "streamlit>=1.30.0",
+    "pandas>=2.0.0",
+    "requests>=2.31.0",
+    "openfoodfacts>=5.0.1",
+    "python-dotenv>=1.0.0",
+    "schedule>=1.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -68,7 +68,7 @@ WHERE dr.ready_minutes <= 30
 -- Daily macro totals for the active week plan.
 CREATE OR REPLACE VIEW mart_macro_summary AS
 WITH latest_plan AS (
-    SELECT plan_id FROM fact_meal_plans ORDER BY date_generated DESC LIMIT 1
+    SELECT plan_id FROM fact_meal_plans ORDER BY date_generated DESC, plan_id DESC LIMIT 1
 )
 SELECT
     fmp.day_of_week,

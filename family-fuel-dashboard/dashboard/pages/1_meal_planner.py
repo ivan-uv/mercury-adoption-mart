@@ -40,7 +40,7 @@ try:
             meal_slot,
             title,
             cuisine,
-            prep_minutes,
+            ready_minutes,
             calories_per_serving,
             image_url,
             source_url,
@@ -60,9 +60,12 @@ if df.empty:
 
 # Apply filters
 if max_prep < 60:
-    df = df[df["prep_minutes"] <= max_prep]
+    df = df[df["ready_minutes"] <= max_prep]
 if kid_only:
     df = df[df["kid_friendly"]]
+if diet_filters:
+    for tag in diet_filters:
+        df = df[df["diet_tags"].apply(lambda tags: tag in (tags or []))]
 
 # ── Render 3×7 grid ──────────────────────────────────────────
 DAY_NAMES = {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"}
@@ -79,7 +82,7 @@ for day_num, col in zip(range(1, 8), cols):
         else:
             r = row.iloc[0]
             cal = int(r["calories_per_serving"]) if pd.notna(r["calories_per_serving"]) else "?"
-            prep = int(r["prep_minutes"]) if pd.notna(r["prep_minutes"]) else "?"
+            prep = int(r["ready_minutes"]) if pd.notna(r["ready_minutes"]) else "?"
             label = r["title"]
             link = r["source_url"] if pd.notna(r["source_url"]) else "#"
             col.markdown(
@@ -87,5 +90,17 @@ for day_num, col in zip(range(1, 8), cols):
                 f"*{cal} kcal · {prep} min*"
             )
 
+# ── Daily calorie summary vs target ────────────────────────
 st.divider()
+if not df.empty:
+    daily_cals = df.groupby("day_of_week")["calories_per_serving"].sum().reset_index()
+    daily_cals.columns = ["day_of_week", "total_calories"]
+    daily_cals["day_name"] = daily_cals["day_of_week"].map(DAY_NAMES)
+    over_days = (daily_cals["total_calories"] > target_cal).sum()
+    under_days = (daily_cals["total_calories"] < target_cal * 0.8).sum()
+    if over_days > 0:
+        st.warning(f"{over_days} day(s) exceed {target_cal} kcal target")
+    if under_days > 0:
+        st.info(f"{under_days} day(s) are more than 20% below {target_cal} kcal target")
+
 st.caption(f"Showing {len(df)} meal slots · target {target_cal} kcal/day")

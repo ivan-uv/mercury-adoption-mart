@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 # Spoonacular nutrient name → our canonical dim_nutrients name
 NUTRIENT_NAME_MAP = {
+    # Spoonacular names
     "Calories": "Calories",
     "Protein": "Protein",
     "Fat": "Total Fat",
@@ -20,6 +21,16 @@ NUTRIENT_NAME_MAP = {
     "Saturated Fat": "Saturated Fat",
     "Cholesterol": "Cholesterol",
     "Vitamin C": "Vitamin C",
+    # USDA FDC names
+    "Energy": "Calories",
+    "Total lipid (fat)": "Total Fat",
+    "Carbohydrate, by difference": "Carbohydrates",
+    "Fiber, total dietary": "Fiber",
+    "Sugars, total including NLEA": "Sugar",
+    "Sodium, Na": "Sodium",
+    "Fatty acids, total saturated": "Saturated Fat",
+    "Cholesterol": "Cholesterol",
+    "Vitamin C, total ascorbic acid": "Vitamin C",
 }
 
 # Allergen keywords → standardized tag
@@ -46,22 +57,24 @@ def _detect_allergens(ingredient_names: list[str]) -> list[str]:
 
 def transform_recipes(
     raw_recipes: list[dict],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Parse Spoonacular recipe dicts into three staging DataFrames:
+    Parse Spoonacular recipe dicts into four staging DataFrames:
       - ingredients_df: ingredient_id, name, aisle
       - nutrition_df:   recipe_id, nutrient_name, amount_per_serving
       - recipe_ingr_df: recipe_id, ingredient_id, quantity, unit
+      - allergens_df:   recipe_id, allergens (list of detected allergen tags)
 
     Args:
         raw_recipes: List of raw recipe dicts from Spoonacular complexSearch.
 
     Returns:
-        (ingredients_df, nutrition_df, recipe_ingr_df)
+        (ingredients_df, nutrition_df, recipe_ingr_df, allergens_df)
     """
     ing_rows: list[dict] = []
     nut_rows: list[dict] = []
     ri_rows: list[dict] = []
+    allergen_rows: list[dict] = []
     seen_ing_ids: set[int] = set()
 
     for recipe in raw_recipes:
@@ -84,6 +97,15 @@ def transform_recipes(
 
         # ── Ingredients ────────────────────────────────────────
         extended = recipe.get("extendedIngredients") or []
+        ingredient_names = [
+            ingr.get("nameClean") or ingr.get("name", "") for ingr in extended
+        ]
+        allergens = _detect_allergens(ingredient_names)
+        allergen_rows.append({
+            "recipe_id": recipe_id,
+            "allergens": allergens,
+        })
+
         for ingr in extended:
             ing_id = ingr.get("id")
             if not ing_id:
@@ -116,12 +138,15 @@ def transform_recipes(
         ri_rows, columns=["recipe_id", "ingredient_id", "quantity", "unit"]
     ).drop_duplicates(["recipe_id", "ingredient_id"])
 
+    allergens_df = pd.DataFrame(allergen_rows, columns=["recipe_id", "allergens"])
+
     log.info(
         f"Transform: {len(ingredients_df)} ingredients, "
         f"{len(nutrition_df)} nutrition rows, "
-        f"{len(recipe_ingr_df)} recipe-ingredient links"
+        f"{len(recipe_ingr_df)} recipe-ingredient links, "
+        f"{len(allergens_df)} allergen records"
     )
-    return ingredients_df, nutrition_df, recipe_ingr_df
+    return ingredients_df, nutrition_df, recipe_ingr_df, allergens_df
 
 
 def transform_usda(raw_usda: list[dict]) -> pd.DataFrame:

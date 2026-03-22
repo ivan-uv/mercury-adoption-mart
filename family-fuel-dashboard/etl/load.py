@@ -140,6 +140,12 @@ def create_staging_tables(con: duckdb.DuckDBPyConnection) -> None:
         )
     """)
     con.execute("""
+        CREATE OR REPLACE TEMP TABLE staging_allergens (
+            recipe_id   INTEGER,
+            allergens   VARCHAR[]
+        )
+    """)
+    con.execute("""
         CREATE OR REPLACE TEMP TABLE staging_meal_plans (
             plan_id         VARCHAR,
             date_generated  DATE,
@@ -161,6 +167,10 @@ def load_staging_nutrition(con: duckdb.DuckDBPyConnection, df) -> None:
 
 def load_staging_recipe_ingredients(con: duckdb.DuckDBPyConnection, df) -> None:
     con.execute("INSERT INTO staging_recipe_ingredients SELECT * FROM df")
+
+
+def load_staging_allergens(con: duckdb.DuckDBPyConnection, df) -> None:
+    con.execute("INSERT INTO staging_allergens SELECT * FROM df")
 
 
 def load_staging_meal_plans(con: duckdb.DuckDBPyConnection, df) -> None:

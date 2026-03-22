@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = str(Path(__file__).parent.parent / "data" / "family_fuel.duckdb")
+from etl.load import DB_PATH
 
 st.set_page_config(
     page_title="Family Fuel Dashboard",

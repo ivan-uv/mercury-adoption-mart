@@ -21,7 +21,7 @@ st.caption("Pre-filtered: ≤30 min prep, high ratings, no hard-to-sell ingredie
 with st.sidebar:
     st.subheader("Allergen Exclusions")
     exclude_dairy = st.checkbox("Exclude dairy")
-    exclude_nuts = st.checkbox("Exclude nuts")
+    exclude_nuts = st.checkbox("Exclude nuts", value=True)
     exclude_eggs = st.checkbox("Exclude eggs")
     exclude_gluten = st.checkbox("Exclude gluten")
 
@@ -35,7 +35,7 @@ try:
             recipe_id,
             title,
             cuisine,
-            prep_minutes,
+            ready_minutes,
             calories_per_serving,
             protein_g,
             fat_g,
@@ -45,7 +45,7 @@ try:
             image_url,
             source_url
         FROM mart_kid_friendly
-        ORDER BY prep_minutes
+        ORDER BY ready_minutes
     """).df()
 except Exception as e:
     st.error(f"Could not load kid-friendly recipes: {e}")
@@ -83,7 +83,7 @@ for i in range(0, len(df), 3):
                 st.image(row["image_url"], use_container_width=True)
             st.markdown(f"**[{row['title']}]({row['source_url'] or '#'})**")
             st.caption(
-                f"🕐 {int(row['prep_minutes'] or 0)} min  "
+                f"🕐 {int(row['ready_minutes'] or 0)} min  "
                 f"· 🔥 {int(row['calories_per_serving'] or 0)} kcal  "
                 f"· 💪 {row['protein_g']:.0f}g protein"
             )

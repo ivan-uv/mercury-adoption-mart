@@ -75,23 +75,24 @@ OFF_FIXTURE = [
 
 # ── transform_recipes tests ───────────────────────────────────
 
-def test_transform_recipes_returns_three_dataframes():
+def test_transform_recipes_returns_four_dataframes():
     from etl.transform import transform_recipes
-    ing_df, nut_df, ri_df = transform_recipes(RECIPE_FIXTURE)
+    ing_df, nut_df, ri_df, allergens_df = transform_recipes(RECIPE_FIXTURE)
     assert isinstance(ing_df, pd.DataFrame)
     assert isinstance(nut_df, pd.DataFrame)
     assert isinstance(ri_df, pd.DataFrame)
+    assert isinstance(allergens_df, pd.DataFrame)
 
 
 def test_transform_recipes_ingredient_count():
     from etl.transform import transform_recipes
-    ing_df, _, _ = transform_recipes(RECIPE_FIXTURE)
+    ing_df, _, _, _ = transform_recipes(RECIPE_FIXTURE)
     assert len(ing_df) == 2  # pasta + tomato sauce
 
 
 def test_transform_recipes_nutrition_maps_known_nutrients():
     from etl.transform import transform_recipes
-    _, nut_df, _ = transform_recipes(RECIPE_FIXTURE)
+    _, nut_df, _, _ = transform_recipes(RECIPE_FIXTURE)
     nutrient_names = set(nut_df["nutrient_name"].tolist())
     assert "Calories" in nutrient_names
     assert "Protein" in nutrient_names
@@ -103,7 +104,7 @@ def test_transform_recipes_nutrition_maps_known_nutrients():
 
 def test_transform_recipes_calorie_value():
     from etl.transform import transform_recipes
-    _, nut_df, _ = transform_recipes(RECIPE_FIXTURE)
+    _, nut_df, _, _ = transform_recipes(RECIPE_FIXTURE)
     cal_row = nut_df[nut_df["nutrient_name"] == "Calories"]
     assert len(cal_row) == 1
     assert cal_row.iloc[0]["amount_per_serving"] == pytest.approx(380.0)
@@ -111,24 +112,47 @@ def test_transform_recipes_calorie_value():
 
 def test_transform_recipes_recipe_ingredient_links():
     from etl.transform import transform_recipes
-    _, _, ri_df = transform_recipes(RECIPE_FIXTURE)
+    _, _, ri_df, _ = transform_recipes(RECIPE_FIXTURE)
     assert set(ri_df["recipe_id"].tolist()) == {42}
     assert len(ri_df) == 2
 
 
+def test_transform_recipes_allergen_detection():
+    """Allergens should be detected from ingredient names."""
+    from etl.transform import transform_recipes
+    # Add a recipe with peanut ingredient to verify detection
+    recipe_with_nuts = {
+        **RECIPE_FIXTURE[0],
+        "id": 99,
+        "extendedIngredients": [
+            {"id": 50, "name": "peanut butter", "nameClean": "peanut butter",
+             "aisle": "Nut Butters", "amount": 2.0, "unit": "tbsp"},
+            {"id": 51, "name": "wheat bread", "nameClean": "wheat bread",
+             "aisle": "Bakery", "amount": 2.0, "unit": "slices"},
+        ],
+    }
+    _, _, _, allergens_df = transform_recipes([recipe_with_nuts])
+    assert len(allergens_df) == 1
+    detected = allergens_df.iloc[0]["allergens"]
+    assert "nuts" in detected       # from "peanut"
+    assert "dairy" in detected      # from "butter"
+    assert "gluten" in detected     # from "wheat"
+
+
 def test_transform_recipes_empty_input():
     from etl.transform import transform_recipes
-    ing_df, nut_df, ri_df = transform_recipes([])
+    ing_df, nut_df, ri_df, allergens_df = transform_recipes([])
     assert len(ing_df) == 0
     assert len(nut_df) == 0
     assert len(ri_df) == 0
+    assert len(allergens_df) == 0
 
 
 def test_transform_recipes_missing_nutrition():
     """Recipes without nutrition data should still yield ingredients."""
     recipe = {**RECIPE_FIXTURE[0], "nutrition": None}
     from etl.transform import transform_recipes
-    ing_df, nut_df, ri_df = transform_recipes([recipe])
+    ing_df, nut_df, _, _ = transform_recipes([recipe])
     assert len(ing_df) == 2
     assert len(nut_df) == 0
 
@@ -139,6 +163,12 @@ def test_transform_usda_returns_dataframe():
     from etl.transform import transform_usda
     df = transform_usda(USDA_FIXTURE)
     assert isinstance(df, pd.DataFrame)
+    # Verify USDA nutrient names are properly mapped to canonical names
+    nutrient_names = set(df["nutrient_name"].tolist())
+    assert "Protein" in nutrient_names
+    assert "Calories" in nutrient_names  # "Energy" → "Calories"
+    assert "Total Fat" in nutrient_names  # "Total lipid (fat)" → "Total Fat"
+    assert "Carbohydrates" in nutrient_names  # "Carbohydrate, by difference" → "Carbohydrates"
 
 
 def test_transform_usda_empty():

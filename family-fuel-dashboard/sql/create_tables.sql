@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS dim_recipes (
     recipe_id       INTEGER PRIMARY KEY,
     title           VARCHAR NOT NULL,
     cuisine         VARCHAR,
-    prep_minutes    INTEGER,
+    ready_minutes   INTEGER,
     cook_minutes    INTEGER,
     servings        INTEGER,
     diet_tags       VARCHAR[],             -- ['vegetarian', 'gluten-free', ...]

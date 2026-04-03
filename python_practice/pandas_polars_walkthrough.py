@@ -1,6 +1,6 @@
 # %% [markdown]
 # # Pandas & Polars: Complete Walkthrough
-# **Dataset: 2014 Boston Marathon Results (~32,000 runners)**
+# **Dataset: 2015–2019 Boston Marathon Results (~132,000 runners)**
 #
 # This file walks through everything you need to know about pandas and polars,
 # side by side, using real marathon data. Run each cell interactively in VS Code
@@ -8,7 +8,7 @@
 #
 # ## Setup
 # ```
-# pip install pandas polars requests
+# uv sync
 # ```
 
 # %%
@@ -18,29 +18,49 @@ import polars as pl
 import requests
 from io import StringIO
 
-DATA_URL = "https://raw.githubusercontent.com/llimllib/bostonmarathon/master/results/2014/results.csv"
+BASE_URL = "https://raw.githubusercontent.com/adrian3/Boston-Marathon-Data-Project/refs/heads/master/results{year}.csv"
 
-# Download the data once
-print("Downloading 2014 Boston Marathon data...")
-response = requests.get(DATA_URL)
-csv_text = response.text
-print(f"Downloaded {len(csv_text)} bytes")
+# Download all 5 years — f-string loop, not a hardcoded list, because the
+# URL pattern is perfectly predictable. Add a `year` column to each.
+frames = []
+for year in range(2015, 2020):
+    url = BASE_URL.format(year=year)
+    print(f"Downloading {year}...")
+    csv_text = requests.get(url).text
+    df = pd.read_csv(StringIO(csv_text), na_values=["NULL", ""], on_bad_lines="skip")
+    df["year"] = year
+    frames.append(df)
+
+pdf = pd.concat(frames, ignore_index=True)
+
+# Real-world data is messy: `age` has a stray "M" in 2019, `place_overall`
+# has comma-formatted strings like "1,000", some columns flip between float
+# (all-NaN) and string across years. Clean it up before converting to polars.
+for col in ["place_overall", "age", "seconds", "overall", "gender_result", "division_result"]:
+    pdf[col] = pd.to_numeric(
+        pdf[col].astype(str).str.replace(",", "", regex=False), errors="coerce"
+    )
+
+# pl.from_pandas() converts a pandas DataFrame to polars — the standard
+# interop path. We use it here because the raw CSVs have comma-formatted
+# numbers ("1,000") and ragged lines that trip up polars' strict CSV parser.
+plf = pl.from_pandas(pdf, nan_to_null=True)
+print(f"\nLoaded {len(pdf)} runners across 5 years")
 
 # %% [markdown]
 # ---
 # # 1. Reading Data
 # Pandas and polars both read CSVs easily, but the APIs differ slightly.
+# We already loaded multi-year data above — here's how a single file works.
 
 # %%
 # === PANDAS: Read CSV ===
-pdf = pd.read_csv(StringIO(csv_text))
 print(f"pandas DataFrame: {pdf.shape[0]} rows × {pdf.shape[1]} columns")
 print(f"Type: {type(pdf)}")
 pdf.head()
 
 # %%
 # === POLARS: Read CSV ===
-plf = pl.read_csv(StringIO(csv_text))
 print(f"polars DataFrame: {plf.shape[0]} rows × {plf.shape[1]} columns")
 print(f"Type: {type(plf)}")
 plf.head()
@@ -108,7 +128,7 @@ plf.describe()
 print(type(pdf["name"]))
 
 # Multiple columns → DataFrame
-subset_pd = pdf[["name", "age", "gender", "official"]]
+subset_pd = pdf[["display_name", "age", "gender", "official_time", "seconds"]]
 subset_pd.head()
 
 # %%
@@ -117,9 +137,12 @@ subset_pd.head()
 print(type(plf["name"]))
 
 # Multiple columns → DataFrame (use select)
-subset_pl = plf.select(["name", "age", "gender", "official"])
+subset_pl = plf.select(["display_name", "age", "gender", "official_time", "seconds"])
 # Or with expressions:
-subset_pl2 = plf.select(pl.col("name"), pl.col("age"), pl.col("gender"), pl.col("official"))
+subset_pl2 = plf.select(
+    pl.col("display_name"), pl.col("age"), pl.col("gender"),
+    pl.col("official_time"), pl.col("seconds"),
+)
 subset_pl.head()
 
 # %% [markdown]
@@ -136,11 +159,12 @@ young_pd = pdf[pdf["age"] < 25]
 print(f"Runners under 25: {len(young_pd)}")
 
 # Multiple conditions (use & for AND, | for OR, wrap each in parentheses)
-young_fast_pd = pdf[(pdf["age"] < 25) & (pdf["official"] < 180)]
+# Sub-3-hour = under 10800 seconds
+young_fast_pd = pdf[(pdf["age"] < 25) & (pdf["seconds"] < 10800)]
 print(f"Under 25 AND sub-3-hour: {len(young_fast_pd)}")
 
 # String filtering
-kenya_pd = pdf[pdf["country"] == "KEN"]
+kenya_pd = pdf[pdf["country_residence"] == "Kenya"]
 print(f"Kenyan runners: {len(kenya_pd)}")
 
 # %%
@@ -150,11 +174,11 @@ young_pl = plf.filter(pl.col("age") < 25)
 print(f"Runners under 25: {len(young_pl)}")
 
 # Multiple conditions
-young_fast_pl = plf.filter((pl.col("age") < 25) & (pl.col("official") < 180))
+young_fast_pl = plf.filter((pl.col("age") < 25) & (pl.col("seconds") < 10800))
 print(f"Under 25 AND sub-3-hour: {len(young_fast_pl)}")
 
 # String filtering
-kenya_pl = plf.filter(pl.col("country") == "KEN")
+kenya_pl = plf.filter(pl.col("country_residence") == "Kenya")
 print(f"Kenyan runners: {len(kenya_pl)}")
 
 # %% [markdown]
@@ -165,33 +189,30 @@ print(f"Kenyan runners: {len(kenya_pl)}")
 
 # %%
 # === PANDAS: Add columns ===
-# Pace in km (data has pace in min/mile)
-pdf["pace_km"] = pdf["pace"] * 0.621371
+# Convert seconds to minutes
+pdf["minutes"] = pdf["seconds"] / 60
 
-# Compute second-half time (official minus half split)
-pdf["second_half"] = pdf["official"] - pdf["half"]
+# Hours as a readable float
+pdf["hours"] = pdf["seconds"] / 3600
 
-# Negative split flag (second half faster than first)
-pdf["negative_split"] = pdf["second_half"] < pdf["half"]
+# Speed in mph (26.2 miles / hours)
+pdf["mph"] = 26.2 / pdf["hours"]
 
-pdf[["name", "half", "second_half", "negative_split"]].head(10)
+pdf[["display_name", "official_time", "seconds", "minutes", "hours", "mph"]].head(10)
 
 # %%
 # === POLARS: Add columns ===
 plf = plf.with_columns(
-    # Pace in km
-    (pl.col("pace") * 0.621371).alias("pace_km"),
-
-    # Second-half time
-    (pl.col("official") - pl.col("half")).alias("second_half"),
+    (pl.col("seconds") / 60).alias("minutes"),
+    (pl.col("seconds") / 3600).alias("hours"),
 )
 
 # Can chain another with_columns (or do it all in one)
 plf = plf.with_columns(
-    (pl.col("second_half") < pl.col("half")).alias("negative_split"),
+    (pl.lit(26.2) / pl.col("hours")).alias("mph"),
 )
 
-plf.select("name", "half", "second_half", "negative_split").head(10)
+plf.select("display_name", "official_time", "seconds", "minutes", "hours", "mph").head(10)
 
 # %% [markdown]
 # ---
@@ -202,22 +223,22 @@ plf.select("name", "half", "second_half", "negative_split").head(10)
 # %%
 # === PANDAS: Sort ===
 # Fastest finishers
-fastest_pd = pdf.sort_values("official").head(10)
-fastest_pd[["name", "gender", "age", "country", "official"]]
+fastest_pd = pdf.sort_values("seconds").head(10)
+fastest_pd[["display_name", "gender", "age", "country_residence", "official_time", "year"]]
 
 # %%
 # === POLARS: Sort ===
-fastest_pl = plf.sort("official").head(10)
-fastest_pl.select("name", "gender", "age", "country", "official")
+fastest_pl = plf.sort("seconds").head(10)
+fastest_pl.select("display_name", "gender", "age", "country_residence", "official_time", "year")
 
 # %%
 # Sort by multiple columns
 # Pandas
-pdf.sort_values(["gender", "official"], ascending=[True, True]).head(5)
+pdf.sort_values(["gender", "seconds"], ascending=[True, True]).head(5)
 
 # %%
 # Polars
-plf.sort(["gender", "official"]).head(5)
+plf.sort(["gender", "seconds"]).head(5)
 
 # %% [markdown]
 # ---
@@ -229,42 +250,47 @@ plf.sort(["gender", "official"]).head(5)
 # %%
 # === PANDAS: GroupBy ===
 # Average finish time by gender
-print(pdf.groupby("gender")["official"].mean())
+print(pdf.groupby("gender")["seconds"].mean())
 print()
 
 # Multiple aggregations
-gender_stats_pd = pdf.groupby("gender")["official"].agg(["count", "mean", "median", "min", "max"])
+gender_stats_pd = pdf.groupby("gender")["seconds"].agg(["count", "mean", "median", "min", "max"])
 print(gender_stats_pd)
 
 # %%
 # === POLARS: GroupBy ===
 # Average finish time by gender
-print(plf.group_by("gender").agg(pl.col("official").mean()))
+print(plf.group_by("gender").agg(pl.col("seconds").mean()))
 print()
 
 # Multiple aggregations
 gender_stats_pl = plf.group_by("gender").agg(
-    pl.col("official").count().alias("count"),
-    pl.col("official").mean().alias("mean"),
-    pl.col("official").median().alias("median"),
-    pl.col("official").min().alias("min"),
-    pl.col("official").max().alias("max"),
+    pl.col("seconds").count().alias("count"),
+    pl.col("seconds").mean().alias("mean"),
+    pl.col("seconds").median().alias("median"),
+    pl.col("seconds").min().alias("min"),
+    pl.col("seconds").max().alias("max"),
 )
 print(gender_stats_pl)
 
 # %%
 # === PANDAS: GroupBy with multiple columns ===
-country_gender_pd = pdf.groupby(["country", "gender"])["official"].agg(["count", "mean"]).reset_index()
-country_gender_pd = country_gender_pd.sort_values("count", ascending=False).head(10)
+country_gender_pd = (
+    pdf.groupby(["country_residence", "gender"])["seconds"]
+    .agg(["count", "mean"])
+    .reset_index()
+    .sort_values("count", ascending=False)
+    .head(10)
+)
 country_gender_pd
 
 # %%
 # === POLARS: GroupBy with multiple columns ===
 country_gender_pl = (
-    plf.group_by(["country", "gender"])
+    plf.group_by(["country_residence", "gender"])
     .agg(
-        pl.col("official").count().alias("count"),
-        pl.col("official").mean().alias("mean"),
+        pl.col("seconds").count().alias("count"),
+        pl.col("seconds").mean().alias("mean"),
     )
     .sort("count", descending=True)
     .head(10)
@@ -293,16 +319,18 @@ country_gender_pl
 print("=== Pandas ===")
 print(f"Total runners: {pdf['name'].count()}")
 print(f"Avg age: {pdf['age'].mean():.1f}")
-print(f"Fastest time: {pdf['official'].min():.2f} min")
-print(f"Countries represented: {pdf['country'].nunique()}")
+print(f"Fastest time (sec): {pdf['seconds'].min()}")
+print(f"Countries represented: {pdf['country_residence'].nunique()}")
+print(f"Years: {sorted(pdf['year'].unique())}")
 
 # %%
 # Polars
 print("=== Polars ===")
 print(f"Total runners: {plf['name'].count()}")
 print(f"Avg age: {plf['age'].mean():.1f}")
-print(f"Fastest time: {plf['official'].min():.2f} min")
-print(f"Countries represented: {plf['country'].n_unique()}")
+print(f"Fastest time (sec): {plf['seconds'].min()}")
+print(f"Countries represented: {plf['country_residence'].n_unique()}")
+print(f"Years: {plf['year'].unique().sort().to_list()}")
 
 # %% [markdown]
 # ---
@@ -316,14 +344,14 @@ print(f"Countries represented: {plf['country'].n_unique()}")
 # Uppercase names
 pdf["name_upper"] = pdf["name"].str.upper()
 
-# Extract last name (before the comma)
-pdf["last_name"] = pdf["name"].str.split(",").str[0].str.strip()
+# Extract last name (before the comma — name is "Last, First" format)
+pdf["extracted_last"] = pdf["name"].str.split(",").str[0].str.strip()
 
 # Check if city contains "Boston"
 boston_locals_pd = pdf[pdf["city"].str.contains("Boston", na=False)]
 print(f"Runners from cities with 'Boston': {len(boston_locals_pd)}")
 
-pdf[["name", "name_upper", "last_name"]].head()
+pdf[["name", "name_upper", "extracted_last", "display_name"]].head()
 
 # %%
 # === POLARS: String ops ===
@@ -332,21 +360,22 @@ plf = plf.with_columns(
     pl.col("name").str.to_uppercase().alias("name_upper"),
 
     # Extract last name (before the comma)
-    pl.col("name").str.split(",").list.first().str.strip_chars().alias("last_name"),
+    pl.col("name").str.split(",").list.first().str.strip_chars().alias("extracted_last"),
 )
 
 # Check if city contains "Boston"
 boston_locals_pl = plf.filter(pl.col("city").str.contains("Boston"))
 print(f"Runners from cities with 'Boston': {len(boston_locals_pl)}")
 
-plf.select("name", "name_upper", "last_name").head()
+plf.select("name", "name_upper", "extracted_last", "display_name").head()
 
 # %% [markdown]
 # ---
 # # 11. Missing / Null Data
 #
-# The marathon dataset has some null values (e.g., runners who dropped out
-# won't have all split times, some states are missing).
+# This dataset has a realistic null pattern: split times (5k, 10k, etc.)
+# are populated for 2015–2017 but entirely NULL for 2018–2019.
+# States are missing for international runners, etc.
 
 # %%
 # === PANDAS: Missing data ===
@@ -356,7 +385,7 @@ print(f"\nTotal nulls: {pdf.isnull().sum().sum()}")
 
 # %%
 # Drop rows with any null in specific columns
-clean_pd = pdf.dropna(subset=["official", "half"])
+clean_pd = pdf.dropna(subset=["seconds", "official_time"])
 print(f"Before: {len(pdf)}, After dropping nulls: {len(clean_pd)}")
 
 # Fill nulls
@@ -371,7 +400,7 @@ print(plf.null_count())
 
 # %%
 # Drop rows with null in specific columns
-clean_pl = plf.drop_nulls(subset=["official", "half"])
+clean_pl = plf.drop_nulls(subset=["seconds", "official_time"])
 print(f"Before: {len(plf)}, After dropping nulls: {len(clean_pl)}")
 
 # Fill nulls
@@ -386,38 +415,39 @@ print(f"Nulls in state_filled after: {filled_pl['state_filled'].null_count()}")
 # # 12. Joins / Merges
 #
 # Let's create a secondary DataFrame to demonstrate joins.
+# Note: `country_residence` values are truncated to ~7 chars in this data
+# (e.g., "United " for United States) — a realistic data quality issue.
 
 # %%
-# Create a country info table
-country_data = {
-    "country": ["USA", "KEN", "ETH", "JPN", "GBR", "CAN", "MEX", "GER", "FRA", "BRA"],
-    "country_name": [
-        "United States", "Kenya", "Ethiopia", "Japan", "Great Britain",
-        "Canada", "Mexico", "Germany", "France", "Brazil"
+# Create a continent lookup matching the truncated country names in our data
+continent_data = {
+    "country_residence": [
+        "United ", "Canada", "Kenya", "Ethiopi", "Japan",
+        "Mexico", "Brazil", "Germany", "France", "China",
     ],
     "continent": [
-        "North America", "Africa", "Africa", "Asia", "Europe",
-        "North America", "North America", "Europe", "Europe", "South America"
+        "North America", "North America", "Africa", "Africa", "Asia",
+        "North America", "South America", "Europe", "Europe", "Asia",
     ],
 }
 
 # %%
 # === PANDAS: Merge ===
-country_pd = pd.DataFrame(country_data)
+continent_pd = pd.DataFrame(continent_data)
 
-# Left join (keep all runners, add country info where available)
-merged_pd = pdf.merge(country_pd, on="country", how="left")
+# Left join (keep all runners, add continent where available)
+merged_pd = pdf.merge(continent_pd, on="country_residence", how="left")
 print(f"Rows after merge: {len(merged_pd)}")
-merged_pd[["name", "country", "country_name", "continent"]].head(10)
+merged_pd[["display_name", "country_residence", "continent"]].head(10)
 
 # %%
 # === POLARS: Join ===
-country_pl = pl.DataFrame(country_data)
+continent_pl = pl.DataFrame(continent_data)
 
 # Left join
-merged_pl = plf.join(country_pl, on="country", how="left")
+merged_pl = plf.join(continent_pl, on="country_residence", how="left")
 print(f"Rows after join: {len(merged_pl)}")
-merged_pl.select("name", "country", "country_name", "continent").head(10)
+merged_pl.select("display_name", "country_residence", "continent").head(10)
 
 # %% [markdown]
 # ### Join Types Reference
@@ -439,29 +469,31 @@ merged_pl.select("name", "country", "country_name", "continent").head(10)
 
 # %%
 # === PANDAS: Window functions ===
-# Rank within gender
-pdf["gender_rank"] = pdf.groupby("gender")["official"].rank(method="min")
+# Rank within gender (per year)
+pdf["gender_rank"] = pdf.groupby(["year", "gender"])["seconds"].rank(method="min")
 
 # Running average (rolling) of finish time by overall position
-pdf_sorted = pdf.sort_values("overall")
-pdf_sorted["rolling_avg_10"] = pdf_sorted["official"].rolling(window=10).mean()
+pdf_sorted = pdf.sort_values(["year", "overall"])
+pdf_sorted["rolling_avg_10"] = pdf_sorted.groupby("year")["seconds"].transform(
+    lambda s: s.rolling(window=10).mean()
+)
 
-pdf_sorted[["name", "gender", "official", "gender_rank", "rolling_avg_10"]].head(15)
+pdf_sorted[["display_name", "year", "gender", "official_time", "gender_rank", "rolling_avg_10"]].head(15)
 
 # %%
 # === POLARS: Window functions ===
 # Rank within gender using over()
 plf = plf.with_columns(
-    pl.col("official").rank(method="min").over("gender").alias("gender_rank"),
+    pl.col("seconds").rank(method="min").over("year", "gender").alias("gender_rank"),
 )
 
 # Rolling average (sort first, then use rolling)
-plf_sorted = plf.sort("overall")
+plf_sorted = plf.sort("year", "overall")
 plf_sorted = plf_sorted.with_columns(
-    pl.col("official").rolling_mean(window_size=10).alias("rolling_avg_10"),
+    pl.col("seconds").rolling_mean(window_size=10).alias("rolling_avg_10"),
 )
 
-plf_sorted.select("name", "gender", "official", "gender_rank", "rolling_avg_10").head(15)
+plf_sorted.select("display_name", "year", "gender", "official_time", "gender_rank", "rolling_avg_10").head(15)
 
 # %% [markdown]
 # ### `over()` — Polars' Killer Feature
@@ -471,17 +503,17 @@ plf_sorted.select("name", "gender", "official", "gender_rank", "rolling_avg_10")
 
 # %%
 # === PANDAS: groupby transform ===
-pdf["avg_time_by_gender"] = pdf.groupby("gender")["official"].transform("mean")
-pdf["time_vs_gender_avg"] = pdf["official"] - pdf["avg_time_by_gender"]
-pdf[["name", "gender", "official", "avg_time_by_gender", "time_vs_gender_avg"]].head()
+pdf["avg_time_by_gender"] = pdf.groupby("gender")["seconds"].transform("mean")
+pdf["time_vs_gender_avg"] = pdf["seconds"] - pdf["avg_time_by_gender"]
+pdf[["display_name", "gender", "official_time", "avg_time_by_gender", "time_vs_gender_avg"]].head()
 
 # %%
 # === POLARS: over() ===
 plf = plf.with_columns(
-    pl.col("official").mean().over("gender").alias("avg_time_by_gender"),
-    (pl.col("official") - pl.col("official").mean().over("gender")).alias("time_vs_gender_avg"),
+    pl.col("seconds").mean().over("gender").alias("avg_time_by_gender"),
+    (pl.col("seconds") - pl.col("seconds").mean().over("gender")).alias("time_vs_gender_avg"),
 )
-plf.select("name", "gender", "official", "avg_time_by_gender", "time_vs_gender_avg").head()
+plf.select("display_name", "gender", "official_time", "avg_time_by_gender", "time_vs_gender_avg").head()
 
 # %% [markdown]
 # ---
@@ -502,8 +534,8 @@ query = (
     lazy
     .filter(pl.col("gender") == "F")
     .filter(pl.col("age") < 30)
-    .select("name", "age", "country", "official", "pace")
-    .sort("official")
+    .select("display_name", "age", "country_residence", "official_time", "seconds", "year")
+    .sort("seconds")
     .head(20)
 )
 
@@ -538,12 +570,12 @@ result
 result_pd = (
     pdf
     .query("gender == 'M' and age >= 40 and age < 50")
-    .groupby("country")["official"]
+    .groupby("country_residence")["seconds"]
     .agg(["count", "mean"])
     .reset_index()
-    .rename(columns={"count": "num_runners", "mean": "avg_time"})
-    .query("num_runners >= 10")
-    .sort_values("avg_time")
+    .rename(columns={"count": "num_runners", "mean": "avg_seconds"})
+    .query("num_runners >= 50")
+    .sort_values("avg_seconds")
     .head(10)
 )
 result_pd
@@ -557,13 +589,13 @@ result_pl = (
         & (pl.col("age") >= 40)
         & (pl.col("age") < 50)
     )
-    .group_by("country")
+    .group_by("country_residence")
     .agg(
-        pl.col("official").count().alias("num_runners"),
-        pl.col("official").mean().alias("avg_time"),
+        pl.col("seconds").count().alias("num_runners"),
+        pl.col("seconds").mean().alias("avg_seconds"),
     )
-    .filter(pl.col("num_runners") >= 10)
-    .sort("avg_time")
+    .filter(pl.col("num_runners") >= 50)
+    .sort("avg_seconds")
     .head(10)
 )
 result_pl
@@ -575,55 +607,60 @@ result_pl
 # %%
 # === PANDAS: Pivot ===
 # Average finish time by country and gender (top 5 countries)
-top_countries = pdf["country"].value_counts().head(5).index.tolist()
+top_countries = pdf["country_residence"].value_counts().head(5).index.tolist()
 pivot_pd = (
-    pdf[pdf["country"].isin(top_countries)]
-    .pivot_table(values="official", index="country", columns="gender", aggfunc="mean")
-    .round(2)
+    pdf[pdf["country_residence"].isin(top_countries)]
+    .pivot_table(values="seconds", index="country_residence", columns="gender", aggfunc="mean")
+    .round(0)
 )
 pivot_pd
 
 # %%
 # === POLARS: Pivot ===
 top_countries_pl = (
-    plf["country"]
+    plf["country_residence"]
     .value_counts()
     .sort("count", descending=True)
-    .head(5)["country"]
+    .head(5)["country_residence"]
     .to_list()
 )
 
 pivot_pl = (
     plf
-    .filter(pl.col("country").is_in(top_countries_pl))
-    .pivot(on="gender", index="country", values="official", aggregate_function="mean")
+    .filter(pl.col("country_residence").is_in(top_countries_pl))
+    .pivot(on="gender", index="country_residence", values="seconds", aggregate_function="mean")
 )
 pivot_pl
 
 # %%
 # === PANDAS: Melt (unpivot) ===
-# Melt split times into long format
-split_cols = ["5k", "10k", "half", "20k", "25k", "30k", "35k", "40k"]
-melted_pd = pdf[["name"] + split_cols].head(5).melt(
-    id_vars=["name"],
-    value_vars=split_cols,
-    var_name="checkpoint",
-    value_name="time_minutes",
+# Melt split times into long format (only 2015–2017 have split data)
+split_cols = ["5k", "10k", "15k", "20k", "half", "25k", "30k", "35k", "40k"]
+melted_pd = (
+    pdf[pdf["year"] <= 2017][["display_name", "year"] + split_cols]
+    .head(5)
+    .melt(
+        id_vars=["display_name", "year"],
+        value_vars=split_cols,
+        var_name="checkpoint",
+        value_name="split_time",
+    )
 )
 melted_pd.head(15)
 
 # %%
 # === POLARS: Unpivot (melt) ===
-split_cols_pl = ["5k", "10k", "half", "20k", "25k", "30k", "35k", "40k"]
+split_cols_pl = ["5k", "10k", "15k", "20k", "half", "25k", "30k", "35k", "40k"]
 melted_pl = (
     plf
-    .select(["name"] + split_cols_pl)
+    .filter(pl.col("year") <= 2017)
+    .select(["display_name", "year"] + split_cols_pl)
     .head(5)
     .unpivot(
         on=split_cols_pl,
-        index="name",
+        index=["display_name", "year"],
         variable_name="checkpoint",
-        value_name="time_minutes",
+        value_name="split_time",
     )
 )
 melted_pl.head(15)
@@ -637,32 +674,32 @@ melted_pl.head(15)
 
 # %%
 # === PANDAS: Apply ===
-# Categorize finish time
-def pace_category(minutes):
-    if pd.isna(minutes):
+# Categorize finish time (seconds-based thresholds)
+def pace_category(secs):
+    if pd.isna(secs):
         return "DNF"
-    elif minutes < 180:
+    elif secs < 10800:   # 3 hours
         return "Elite (<3h)"
-    elif minutes < 240:
+    elif secs < 14400:   # 4 hours
         return "Fast (3-4h)"
-    elif minutes < 300:
+    elif secs < 18000:   # 5 hours
         return "Average (4-5h)"
     else:
         return "Recreational (5h+)"
 
-pdf["pace_cat"] = pdf["official"].apply(pace_category)
+pdf["pace_cat"] = pdf["seconds"].apply(pace_category)
 print(pdf["pace_cat"].value_counts())
 
 # %%
 # === POLARS: Use when/then/otherwise (preferred over apply!) ===
 plf = plf.with_columns(
-    pl.when(pl.col("official").is_null())
+    pl.when(pl.col("seconds").is_null())
     .then(pl.lit("DNF"))
-    .when(pl.col("official") < 180)
+    .when(pl.col("seconds") < 10800)
     .then(pl.lit("Elite (<3h)"))
-    .when(pl.col("official") < 240)
+    .when(pl.col("seconds") < 14400)
     .then(pl.lit("Fast (3-4h)"))
-    .when(pl.col("official") < 300)
+    .when(pl.col("seconds") < 18000)
     .then(pl.lit("Average (4-5h)"))
     .otherwise(pl.lit("Recreational (5h+)"))
     .alias("pace_cat")
@@ -680,6 +717,7 @@ print(plf["pace_cat"].value_counts().sort("pace_cat"))
 # # 18. Concatenation
 #
 # Stacking DataFrames vertically or horizontally.
+# (We already used concat to combine years — here's another example.)
 
 # %%
 # Split data and recombine
@@ -742,13 +780,13 @@ import time
 # Pandas groupby
 start = time.time()
 for _ in range(100):
-    pdf.groupby(["gender", "country"])["official"].mean()
+    pdf.groupby(["year", "gender", "country_residence"])["seconds"].mean()
 pd_time = time.time() - start
 
 # Polars groupby
 start = time.time()
 for _ in range(100):
-    plf.group_by(["gender", "country"]).agg(pl.col("official").mean())
+    plf.group_by(["year", "gender", "country_residence"]).agg(pl.col("seconds").mean())
 pl_time = time.time() - start
 
 print(f"Pandas  100x groupby: {pd_time:.3f}s")
